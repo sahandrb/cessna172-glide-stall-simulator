@@ -27,8 +27,9 @@ def main(argv: list[str] | None = None) -> int:
         output = write_homework_plots()
         print(f"Homework plots written to {output}")
         return 0
-    print("Interactive glide view is not built yet.")
-    return 0
+    from cessna_sim.app.main import run_app
+
+    return run_app()
 
 
 if __name__ == "__main__":

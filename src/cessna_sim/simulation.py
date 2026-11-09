@@ -324,6 +324,88 @@ def math_degrees(radians: float) -> float:
     return math.degrees(radians)
 
 
+def run_log_from_trajectory(trajectory: Trajectory, config: Config) -> RunLog:
+    """Sample coefficients along a constant-alpha trajectory, including part (d)."""
+    count = len(trajectory.t)
+    alpha = np.full(count, trajectory.alpha_deg, dtype=np.float64)
+    cl = np.empty(count, dtype=np.float64)
+    cd = np.empty(count, dtype=np.float64)
+    cm = np.empty(count, dtype=np.float64)
+    ratio = np.empty(count, dtype=np.float64)
+    stall = np.empty(count, dtype=np.float64)
+    vs = np.empty(count, dtype=np.float64)
+    gamma_deg = np.degrees(trajectory.gamma_rad)
+    theta_deg = np.empty(count, dtype=np.float64)
+    density = np.empty(count, dtype=np.float64)
+    load_factor = np.empty(count, dtype=np.float64)
+    for index in range(count):
+        aero = aerodynamic_state(
+            trajectory.alpha_deg,
+            float(trajectory.airspeed[index]),
+            float(trajectory.altitude[index]),
+            config,
+        )
+        cl_max = maximum_lift_coefficient(config)
+        cl[index] = aero["CL"]
+        cd[index] = aero["CD"]
+        cm[index] = aero["Cm"]
+        ratio[index] = aero["L_over_D"]
+        density[index] = aero["rho"]
+        load_factor[index] = aero["load_factor"]
+        stall[index] = 1.0 if is_stalled(trajectory.alpha_deg, config) else 0.0
+        vs[index] = stall_speed(aero["weight_n"], aero["rho"], config.wing_area_m2, cl_max)
+        theta_deg[index] = math.degrees(
+            pitch_angle_rad(trajectory.alpha_deg, float(trajectory.gamma_rad[index]))
+        )
+    events = [
+        SimulationEvent(
+            time_s=float(trajectory.t[0]),
+            name="engine_failure",
+            altitude_m=float(trajectory.altitude[0]),
+            airspeed_m_s=float(trajectory.airspeed[0]),
+            alpha_deg=trajectory.alpha_deg,
+        )
+    ]
+    if is_stalled(trajectory.alpha_deg, config):
+        events.append(
+            SimulationEvent(
+                time_s=float(trajectory.t[0]),
+                name="stall_onset",
+                altitude_m=float(trajectory.altitude[0]),
+                airspeed_m_s=float(trajectory.airspeed[0]),
+                alpha_deg=trajectory.alpha_deg,
+            )
+        )
+    events.append(
+        SimulationEvent(
+            time_s=float(trajectory.t[-1]),
+            name="end",
+            altitude_m=float(trajectory.altitude[-1]),
+            airspeed_m_s=float(trajectory.airspeed[-1]),
+            alpha_deg=trajectory.alpha_deg,
+        )
+    )
+    return RunLog(
+        t=np.asarray(trajectory.t, dtype=np.float64),
+        alpha_deg=alpha,
+        cl=cl,
+        cd=cd,
+        cm=cm,
+        lift_to_drag=ratio,
+        airspeed=np.asarray(trajectory.airspeed, dtype=np.float64),
+        stall_speed=vs,
+        gamma_deg=np.asarray(gamma_deg, dtype=np.float64),
+        theta_deg=theta_deg,
+        altitude=np.asarray(trajectory.altitude, dtype=np.float64),
+        distance=np.asarray(trajectory.distance, dtype=np.float64),
+        density=density,
+        load_factor=load_factor,
+        stall_flag=stall,
+        events=events,
+        message=trajectory.message,
+    )
+
+
 def initial_state_is_finite(alpha_deg: float, altitude_m: float, config: Config) -> str:
     """Empty string when a run may start, otherwise the reason to refuse."""
     try:

@@ -67,13 +67,14 @@ class Config:
     prop_spindown_s: float = 1.5
 
     sprite_flip_horizontal: bool = True
-    sprite_level_correction_deg: float = 0.39
+    sprite_level_correction_deg: float = 0.0
     aircraft_display_length_px: int = 360
     # Source-image pixels, nose still pointing left, before flip and level.
     prop_hub_source_px: tuple[float, float] = (40.0, 293.0)
     prop_mask_radius_px: float = 22.0
-    # Prepared-image pixels. Refined when the sprite is measured.
-    cg_px: tuple[float, float] = (852.0, 200.0)
+    # Prepared-image pixels, nose pointing right, level correction applied.
+    # CG is one third of the fuselage aft of the nose, just under the wing.
+    cg_px: tuple[float, float] = (852.67, 181.0)
     prop_hub_px: tuple[float, float] = (1239.0, 293.0)
     display_pitch_smoothing_s: float = 0.15
 
