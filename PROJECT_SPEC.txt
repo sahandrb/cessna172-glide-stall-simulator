@@ -1,0 +1,379 @@
+==========================================================================================
+ PROJECT SPECIFICATION — CESSNA 172 GLIDE & STALL SIMULATOR
+ File: PROJECT_SPEC.txt   (single source of truth — read fully before writing any code)
+ Version: 1.0   Date: 2026-11-09
+ Owner: Sahand — MSc Aerospace Engineering (Flight Dynamics & Control), University of Tehran
+==========================================================================================
+
+------------------------------------------------------------------------------------------
+0. INSTRUCTIONS FOR THE AI CODING AGENT (READ FIRST)
+------------------------------------------------------------------------------------------
+- You are building this project from scratch in this repository, following THIS file.
+- Everything (scenario, physics, data, UI, structure, docs) is defined here. Do not invent
+  physics, coefficients, or features not listed here.
+- Where this file says "CONFIG", the value must live in one config file (config.py or
+  config.yaml) so the owner can change it without touching code.
+- Where this file says "ASSUMPTION", the value is NOT from the course homework; it must be
+  labeled "Assumption" in the UI (small text) and in the documentation.
+- If the owner gives you the original homework MATLAB code or problem statement, its values
+  for mass, wing area, and air density OVERRIDE the defaults in Section 4.4.
+- This is a portfolio project for graduate school applications: code quality, naming,
+  structure, documentation and tests must be professional (Section 11).
+- Work in milestones (Section 12). After each milestone: run the tests, run the app, commit
+  with a clean conventional commit message (e.g. "feat: add glide dynamics model").
+- Language of code, comments, UI and docs: English.
+
+------------------------------------------------------------------------------------------
+1. PURPOSE
+------------------------------------------------------------------------------------------
+A 2D, side-view ENGINEERING TEST of a Cessna 172 that loses its engine and glides.
+It is NOT a game: no score, no points, no explosions, no crash or landing logic.
+
+The user's only control after engine failure is the ANGLE OF ATTACK (alpha).
+The user watches the aircraft glide (with correct nose-up / nose-down pitch), sees live
+engineering data in a corner dashboard, and after the run sees engineering plots,
+including exactly what happened at the moment of stall.
+
+It is based on a Flight Dynamics course homework (HW1, Cessna 172) with four parts:
+  (a) CL, CD, Cm versus alpha
+  (b) maximum lift-to-drag ratio
+  (c) equilibrium (steady glide) speed V and flight-path angle gamma versus altitude
+  (d) time simulation of V(t), gamma(t), h(t), r(t)
+plus ONE approved extension: STALL (Section 6).
+
+------------------------------------------------------------------------------------------
+2. STRICT SCOPE RULES
+------------------------------------------------------------------------------------------
+INCLUDED:
+  - HW1 aerodynamic model (Section 4.2), point-mass longitudinal equations (Section 4.3),
+    equilibrium glide (Section 4.5), time simulation (Section 4.6), stall extension (Sec 6).
+NOT INCLUDED (do NOT add):
+  - wind, gusts, turbulence
+  - flaps, landing gear effects, ground effect
+  - landing / crash / explosion logic, scoring, achievements
+  - CFD or drawn flow fields around the wing
+  - atmosphere models other than the one in Section 4.4
+  - thrust after engine failure, propeller aerodynamics
+  - 3D graphics
+This is a different project from the owner's "paper airplane" assignment. Do not mix them.
+
+------------------------------------------------------------------------------------------
+3. SCENARIO (WHAT THE USER EXPERIENCES)
+------------------------------------------------------------------------------------------
+3.1 Setup screen (before the run)
+    Inputs (with defaults):
+      - Initial altitude h0 ........ default 1000 m   (range 50 .. 5000 m)
+      - Initial angle of attack .... default 6.0 deg  (range -2 .. alpha_max_input)
+      - Max simulated time ......... default 300 s    (safety limit)
+      - Mode selector:
+          "Glide test"  (default, interactive, described below)
+          "HW part (d)" (non-interactive reproduction: h0 = 10 m, t = 0..10 s,
+                         constant alpha, initial V and gamma from equilibrium, r0 = 0;
+                         produces the four HW plots V, gamma, h, r vs time)
+      - Run button.
+    The initial V and gamma are NOT typed by the user: they are computed automatically as
+    the equilibrium glide at h0 and the chosen alpha (Section 4.5), r0 = 0.
+
+3.2 Phase 1 — normal flight (about 3 s of screen time)
+    - Aircraft flies steadily at the equilibrium state. Propeller shown spinning
+      (blurred disc). Status text: "NORMAL FLIGHT".
+    - Implementation note: because the HW model has no thrust model, this phase is
+      visual only: the state is held at the equilibrium values (or integrated with the
+      same equations — at equilibrium it stays constant). Physics time t starts at 0
+      at engine failure.
+
+3.3 Phase 2 — engine failure
+    - Banner "ENGINE FAILURE" for ~2 s. Propeller spins down over ~1.5 s until two
+      blades are clearly visible and stopped. Thrust = 0 from this moment on (it already
+      is zero in the glide equations).
+
+3.4 Phase 3 — glide (user controls alpha only)
+    - Keyboard: UP arrow = increase alpha, DOWN arrow = decrease alpha.
+      Rate: CONFIG alpha_rate_deg_per_s = 4.0 deg/s while held. Also an on-screen slider.
+    - alpha is clamped to [alpha_min_input, alpha_max_input] = [-2, 20] deg (CONFIG).
+      (Values above alpha_stall are allowed so the user can deliberately stall.)
+    - The aircraft sprite is rotated by the pitch angle theta = alpha + gamma.
+    - When stall occurs, a red flashing "STALL" warning appears (Section 6) and the event
+      is logged.
+
+3.5 End of run
+    - The run ends automatically when altitude h <= 10 m (CONFIG h_end = 10 m), or when
+      the max simulated time is reached. No landing, no crash.
+    - Then: results screen with final distance, flight time, average L/D, minimum speed,
+      stall events (count and times), and buttons "Show plots", "Export", "Run again".
+
+------------------------------------------------------------------------------------------
+4. PHYSICS (FROM THE HOMEWORK)
+------------------------------------------------------------------------------------------
+4.1 Notation and units (SI everywhere internally; angles in radians internally,
+    shown in degrees in UI)
+      V      true airspeed [m/s]
+      gamma  flight-path angle [rad], positive = climbing, negative in a glide
+      h      altitude [m]
+      r      horizontal distance travelled [m]
+      alpha  angle of attack [deg in the aero formulas below; wing-chord reference]
+      theta  pitch angle [rad] = alpha + gamma
+      m      mass [kg], g gravity [m/s^2], S wing area [m^2], rho air density [kg/m^3]
+      q      dynamic pressure = 0.5 * rho * V^2
+      L, D   lift and drag [N],  W = m*g
+
+4.2 Aerodynamic coefficients (HW part a) — alpha in DEGREES
+      CL(alpha) = 0.20 + 0.096 * alpha
+      CD(CL)    = 0.032 + 0.0524 * CL^2
+      Cm(alpha) = -0.01449 * (alpha - 2.25)
+    Notes:
+      - Cm uses an assumed trim angle of 2.25 deg. Cm is computed, displayed and plotted
+        only (point-mass model: Cm does NOT enter the equations of motion).
+      - HW validity range: -2 .. 16 deg. The linear CL has no stall; stall is added in
+        Section 6 and REPLACES CL above alpha_stall.
+
+4.3 Equations of motion (point mass, longitudinal, thrust T = 0)
+      L = q * S * CL
+      D = q * S * CD
+      dV/dt     = -D/m - g*sin(gamma)
+      dgamma/dt = (L - m*g*cos(gamma)) / (m*V)
+      dh/dt     = V*sin(gamma)
+      dr/dt     = V*cos(gamma)
+      theta     = alpha + gamma      (used for drawing and display)
+    State vector: x = [V, gamma, h, r].   Input: alpha(t) from the user.
+
+4.4 Constants and data (CONFIG). Defaults below; homework values override them.
+      m   = 1156.7 kg        (Cessna 172S max gross weight 2550 lb)       [default]
+      S   = 16.165 m^2       (174 ft^2)                                    [default]
+      g   = 9.80665 m/s^2
+      rho : CONFIG density_model
+            "isa_troposphere" (default):
+                 rho(h) = 1.225 * (1 - 2.2558e-5 * h)^4.2559
+            "constant":
+                 rho = 1.225
+      >>> OWNER ACTION: replace m, S and the density model with the exact homework values
+          if they differ. Show a startup log line listing the values in use.
+
+4.5 Equilibrium (steady) glide (HW part c)
+    Steady glide at constant alpha: dV/dt = 0 and dgamma/dt = 0 with T = 0 gives
+      tan(gamma_eq) = -CD/CL            ->  gamma_eq = -atan(CD/CL)   (requires CL > 0)
+      V_eq = sqrt( 2*W*cos(gamma_eq) / (rho(h)*S*CL) )
+    Used for:
+      - initial conditions of every run
+      - HW part (c) plot: V_eq and gamma_eq vs altitude 0..5000 m (at a CONFIG
+        alpha, default alpha at (L/D)max), and optionally a family of curves for
+        several alphas.
+    If CL <= 0 at the chosen initial alpha, refuse to start and show a message.
+
+4.6 Maximum lift-to-drag ratio (HW part b)
+      CL_star  = sqrt(0.032 / 0.0524)                  ~ 0.781
+      (L/D)max = 1 / (2*sqrt(0.032 * 0.0524))          ~ 12.2
+      alpha_star = (CL_star - 0.20) / 0.096            ~ 6.05 deg
+    Compute these from the formulas in code (do not hard-code the results) and show
+    them in the plots and docs. Theoretical still-air glide distance from height dh:
+      r_theory ~ dh * (L/D)  (small-angle), best case dh * (L/D)max.
+
+4.7 Numerical integration
+    - SciPy solve_ivp, method "RK23" (equivalent of MATLAB ode23), rtol = 1e-6,
+      atol = 1e-8 (CONFIG). NumPy float64.
+    - Interactive mode: alpha changes with user input, so integrate in short fixed
+      intervals (CONFIG physics_dt = 0.02 s): each frame, integrate from t to t+dt with
+      alpha held constant, then update alpha. Rendering is decoupled from physics.
+    - Event: stop when h reaches h_end (10 m). Guard against V <= 0.5 m/s (stop with
+      message) to avoid division by zero in dgamma/dt.
+    - HW part (d) mode: single solve_ivp call over 0..10 s with constant alpha,
+      t_eval with 0.01 s spacing.
+
+------------------------------------------------------------------------------------------
+5. LIVE DASHBOARD (corner panel, updated every frame)
+------------------------------------------------------------------------------------------
+    t [s] | V [m/s and kt] | Vs stall speed [m/s] | h [m] | r [m] |
+    alpha [deg] | gamma [deg] | theta [deg] | CL | CD | Cm | L/D |
+    sink rate -dh/dt [m/s] | STALL flag (green "OK" / red flashing "STALL")
+    Also show small grey text: "Assumption: stall model (see docs)".
+
+------------------------------------------------------------------------------------------
+6. STALL EXTENSION (approved; NOT part of the homework -> label as ASSUMPTION)
+------------------------------------------------------------------------------------------
+6.1 Parameters (CONFIG)
+      alpha_stall_deg = 14.0     (default; alternative 16.0 = edge of HW range)
+      post_stall_slope = 0.07    (per degree)
+      post_stall_drag  = "hw_formula"   (default)  |  "assumed_rise" (optional)
+      CL_max = CL(alpha_stall) from the HW line  -> 0.20 + 0.096*14 = 1.544 at 14 deg
+                                                     (1.736 at 16 deg)
+
+6.2 Lift with stall
+      if alpha <= alpha_stall:  CL = 0.20 + 0.096*alpha
+      else:                     CL = CL_max - post_stall_slope*(alpha - alpha_stall)
+      (CL must stay continuous at alpha_stall.)
+
+6.3 Drag after stall
+      "hw_formula": CD = 0.032 + 0.0524*CL^2 (same as HW). Known limitation: drag
+                    decreases when CL decreases after stall, which is not physical.
+                    Document this.
+      "assumed_rise": CD = 0.032 + 0.0524*CL^2 + k_d*(alpha - alpha_stall) for
+                    alpha > alpha_stall, k_d CONFIG default 0.02 per degree, clearly
+                    marked as an illustrative assumption with no source.
+
+6.4 Stall speed (displayed live)
+      Vs(h) = sqrt( 2*W / (rho(h) * S * CL_max) )          (1-g stall speed)
+      Optional display: Vs_n = Vs * sqrt(n), n = L / W  (load factor).
+      Vs depends on rho, so it changes with altitude (TAS increases with altitude).
+
+6.5 Stall detection and logging
+      stall_flag = (alpha > alpha_stall)
+      Log each transition (onset and recovery) with time, h, V, alpha, CL.
+      Mark onsets on all time plots with a red vertical dashed line and label
+      "stall onset t = ... s"; shade stalled intervals light red.
+
+6.6 Why alpha_stall = 14 deg (put this reasoning in docs/theory.md)
+    - Cessna 172S POH: stall speed flaps up, power off, max weight 2550 lb:
+      48 KIAS = 53 KCAS = 27.27 m/s.
+    - Back-computed CL_max = 2W / (rho*S*Vs^2) = 1.541 (sea level, rho = 1.225,
+      S = 16.165 m^2). Use calibrated airspeed (KCAS), not indicated (KIAS).
+    - The HW CL line reaches 1.54 at alpha ~ 13.96 deg -> alpha_stall = 14 deg.
+    - At 16 deg the HW line gives CL = 1.736 -> Vs ~ 25.7 m/s ~ 50 kt, ~3 kt below POH
+      (~13% CL over-prediction).
+    - Check: POH bank-angle stall speeds follow Vs*sqrt(n): 30 deg -> 57, 45 deg -> 63,
+      60 deg -> 75 KCAS.
+    - JSBSim c172p (whole aircraft, body-axis alpha): CL_max = 1.47 at 16 deg; after the
+      peak 1.43 @ 17.2, 1.38 @ 18.3, 1.30 @ 19.5, 1.15 @ 20.6 deg (source of the 0.07/deg
+      slope).
+    - NACA 2412 (wing root airfoil) section: XFOIL Re = 1e6 cl_max 1.582 @ 16.5 deg;
+      section cl_max is higher than whole-aircraft CL_max (finite wing, tail download).
+
+------------------------------------------------------------------------------------------
+7. VISUALS
+------------------------------------------------------------------------------------------
+7.1 View: 2D side view. Sky gradient, parallax clouds, ground line with distance markers
+    every 100 m (labels every 500 m). Camera follows the aircraft horizontally and keeps
+    it in the left-center third; vertical camera follows altitude smoothly. A small
+    altitude scale on the left edge.
+7.2 Aircraft sprite
+    - Default: "2004 Cessna 172S" side profile, Wikimedia Commons, CC BY-SA 4.0,
+      author Er-Jin Jang:
+      https://commons.wikimedia.org/wiki/File:2004_Cessna_172S.svg
+      Alternative: "1956 Cessna 172", CC BY-SA 4.0:
+      https://commons.wikimedia.org/wiki/File:1956_Cessna_172.svg
+    - The owner supplied a transparent PNG of that drawing. Use the PNG directly.
+      Fuselage reference line exactly horizontal. Remove/mask the drawn propeller.
+    - Rotate by theta (degrees) about the approximate CG (CONFIG cg_px). Positive theta = nose up.
+7.3 Propeller: separate procedurally drawn element at the nose, rotating with the body.
+      Before failure: translucent blurred disc. After failure: spin-down ~1.5 s, then
+      two stopped blades. The drawn propeller in the PNG is masked so only this
+      procedural propeller is visible.
+7.4 "Air feel" (no CFD)
+    - Free-stream streak lines: faint short lines/particles moving past the aircraft in
+      the direction opposite to the velocity vector (i.e. parallel to the flight path,
+      angle gamma), with screen speed proportional to V.
+    - Relative-wind arrow in front of the nose + an arc between the arrow and the
+      fuselage reference line labeled "alpha = x.x deg".
+7.5 Flight path trail: the current run's path drawn as a line; previous runs of the same
+    session drawn faintly for comparison.
+7.6 Background assets (optional): Kenney "Background Elements", CC0,
+    https://kenney.nl/assets/background-elements  — or simple procedural shapes.
+
+------------------------------------------------------------------------------------------
+8. POST-RUN ENGINEERING PLOTS (matplotlib)
+------------------------------------------------------------------------------------------
+    Figure 1 (HW a): CL, CD, Cm vs alpha (-2..20 deg), HW linear CL dashed, stall-model CL
+                     solid, alpha_stall marked, operating range of the run highlighted.
+    Figure 2 (HW b): L/D vs alpha with (L/D)max and alpha_star marked.
+    Figure 3 (HW c): V_eq and gamma_eq vs altitude 0..5000 m.
+    Figure 4 (HW d / run): time histories V(t), gamma(t), h(t), r(t) — 4 subplots.
+    Figure 5 (run): alpha(t), CL(t), L/D(t), and V(t) with Vs(t) overlaid.
+    Stall onset lines and shaded stalled intervals on Figures 4 and 5.
+    All axes labeled with units; grid on; titles; consistent style.
+    Export: PNG (300 dpi) of every figure + CSV log of the run into
+            outputs/run_YYYYMMDD_HHMMSS/.
+
+------------------------------------------------------------------------------------------
+9. LOG FORMAT (CSV, one row per physics step)
+------------------------------------------------------------------------------------------
+    t, alpha_deg, CL, CD, Cm, L_over_D, V, Vs, gamma_deg, theta_deg, h, r, rho,
+    load_factor, stall_flag
+    + a separate events.csv: time, event (engine_failure / stall_onset / stall_recovery /
+      end), h, V, alpha_deg.
+
+------------------------------------------------------------------------------------------
+10. TECH STACK
+------------------------------------------------------------------------------------------
+    Python >= 3.10, numpy, scipy, pygame-ce, matplotlib, pytest.
+    Physics modules must not import pygame (pure, testable).
+    The aircraft image is a PNG, so cairosvg is not used.
+
+------------------------------------------------------------------------------------------
+11. REPOSITORY STANDARDS (PORTFOLIO QUALITY)
+------------------------------------------------------------------------------------------
+    Repository name: cessna172-glide-stall-simulator
+    Layout:
+      README.md
+      LICENSE                      (MIT for code; assets keep their own licenses)
+      pyproject.toml  (or requirements.txt)
+      .gitignore
+      PROJECT_SPEC.txt             (this file)
+      src/cessna_sim/
+          __init__.py
+          config.py                (all CONFIG values)
+          aerodynamics.py          (CL, CD, Cm, stall model, L/D max)
+          atmosphere.py            (rho models)
+          dynamics.py              (equations of motion)
+          equilibrium.py           (steady glide, part c)
+          simulation.py            (integrator loop, events, logging)
+          plots.py                 (figures 1-5, export)
+          app/                     (pygame UI: setup screen, flight view, dashboard,
+                                    results screen, sprites, propeller, streaks)
+      assets/aircraft/ , assets/background/ , assets/ATTRIBUTION.md
+      docs/theory.md               (all equations from Sections 4 and 6, derivation of
+                                    the equilibrium glide, stall reasoning, limitations)
+      docs/validation.md           (numeric checks vs theory, Section 11.2)
+      docs/images/                 (screenshots, a short GIF for README)
+      tests/                       (pytest)
+      main.py  or  python -m cessna_sim
+    11.1 README (English): title, one-line description, GIF/screenshot, features,
+         physics summary, how to install and run, controls, outputs, assumptions &
+         limitations, references, asset attributions, author.
+    11.2 Tests / validation (must pass):
+         - (L/D)max ~ 12.2 and alpha_star ~ 6.05 deg computed from the formulas
+         - equilibrium state is stationary: integrating 10 s from equilibrium at constant
+           alpha keeps V and gamma within a small tolerance (density changes slightly
+           with altitude in ISA mode — use constant rho for this test)
+         - Vs formula: with m = 1156.7, S = 16.165, rho = 1.225, CL_max = 1.541 ->
+           Vs ~ 27.3 m/s
+         - CL continuous at alpha_stall
+         - glide distance from h0 to h_end at alpha_star is close to
+           (h0 - h_end) * (L/D)max (constant rho), within a few percent
+         - HW part (d) mode runs and produces V, gamma, h, r over 10 s
+    11.3 Assumptions & limitations section (docs + README): point-mass model, Cm not in
+         dynamics, alpha changes instantly (no pitch dynamics), stall model is an
+         assumption, post-stall drag limitation, density model choice, default m/S
+         values if HW values not supplied.
+    11.4 References:
+         - Cessna 172S POH: https://calaero.edu/wp-content/uploads/2023/05/Cessna_172SP_NavIII_POH_opt.pdf
+         - NTSB copy of 172S stall data: https://data.ntsb.gov/Docket/Document/docBLOB?FileExtension=.PDF&FileName=Comparison+Data+%28Cessna+172S+-+Altitude+Loss+During+Stalls+and+Spins%29-Master.PDF&ID=40374572
+         - Cessna 172P POH: https://txwg.cap.gov/media/cms/C172P_POH_wo_Supplements_AC5C148CF2BF0.pdf
+         - JSBSim c172p model: https://github.com/JSBSim-Team/jsbsim/blob/master/aircraft/c172p/c172p.xml
+         - NACA 2412 XFOIL polar: http://airfoiltools.com/polar/details?polar=xf-naca2412-il-1000000
+         - Abbott & von Doenhoff, NACA Report 824: https://ntrs.nasa.gov/citations/19930092747
+         - Airfoil usage guide: https://m-selig.ae.illinois.edu/ads/aircraft.html
+         - FAA Pilot's Handbook of Aeronautical Knowledge: https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/phak
+         - NASA Glenn atmosphere model: https://www.grc.nasa.gov/www/k-12/airplane/atmosmet.html
+
+------------------------------------------------------------------------------------------
+12. MILESTONES (build in this order; commit after each)
+------------------------------------------------------------------------------------------
+    M1  Project skeleton, config, README placeholder, .gitignore, LICENSE.
+    M2  Physics core: aerodynamics, atmosphere, dynamics, equilibrium + unit tests.
+    M3  HW mode: parts (a)-(d) plots generated headless (python -m cessna_sim --hw).
+    M4  Stall model + logging + events + tests.
+    M5  pygame app: setup screen, flight view with rotating sprite, dashboard,
+        engine-failure sequence, propeller spin-down, keyboard/slider alpha control,
+        end at h = 10 m, results screen.
+    M6  Air feel (streaks, relative-wind arrow, alpha arc), path trails, camera.
+    M7  Post-run plots with stall markers, PNG/CSV export.
+    M8  Docs: theory.md, validation.md, README with GIF, attributions; final cleanup.
+
+------------------------------------------------------------------------------------------
+13. OPEN ITEMS (defaults already chosen so work can proceed)
+------------------------------------------------------------------------------------------
+    1. Mass, wing area, density model of the homework -> default Section 4.4.
+    2. alpha_stall: 14 deg (default) or 16 deg.
+    3. Post-stall drag: "hw_formula" (default) or "assumed_rise".
+    4. Aircraft image: 2004 Cessna 172S (default) or 1956 Cessna 172.
+
+END OF SPECIFICATION
