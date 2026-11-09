@@ -19,7 +19,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     print(format_startup_log(DEFAULT_CONFIG))
     if args.hw:
-        print("Homework plots are not built yet.")
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from cessna_sim.plots import write_homework_plots
+
+        output = write_homework_plots()
+        print(f"Homework plots written to {output}")
         return 0
     print("Interactive glide view is not built yet.")
     return 0
