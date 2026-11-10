@@ -61,6 +61,7 @@ def run_app(config: Config = DEFAULT_CONFIG) -> int:
             flight.update(dt, events, keys)
             flight.draw(screen)
             if flight.done and flight.finished_log is not None:
+                flight.audio.stop()
                 trails.append((list(flight.path_r), list(flight.path_h)))
                 message = flight.finished_log.message or "Run finished."
                 results = ResultsScreen(flight.finished_log, message, config)
@@ -71,6 +72,10 @@ def run_app(config: Config = DEFAULT_CONFIG) -> int:
             else:
                 results.draw(screen)
         pygame.display.flip()
+    if flight is not None:
+        flight.audio.stop()
+    if pygame.mixer.get_init() is not None:
+        pygame.mixer.quit()
     pygame.quit()
     return 0
 

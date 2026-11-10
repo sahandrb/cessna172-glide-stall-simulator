@@ -65,6 +65,8 @@ class Config:
     phase_normal_s: float = 3.0
     phase_failure_banner_s: float = 2.0
     prop_spindown_s: float = 1.5
+    # Airspeed at which the looping wind cue reaches full volume.
+    wind_reference_m_s: float = 45.0
 
     sprite_flip_horizontal: bool = True
     sprite_level_correction_deg: float = 0.0
@@ -115,6 +117,8 @@ def validate_config(config: Config) -> None:
         raise ValueError("v_min_m_s must be positive")
     if config.display_pitch_smoothing_s < 0.0:
         raise ValueError("display_pitch_smoothing_s must be zero or positive")
+    if config.wind_reference_m_s <= 0.0:
+        raise ValueError("wind_reference_m_s must be positive")
     if config.aircraft_display_length_px <= 0:
         raise ValueError("aircraft_display_length_px must be positive")
 

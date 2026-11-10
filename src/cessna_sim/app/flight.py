@@ -8,6 +8,7 @@ import pygame
 from PIL import Image
 
 from cessna_sim.aerodynamics import is_stalled
+from cessna_sim.app.audio import FlightAudio
 from cessna_sim.app.dashboard import draw_dashboard, readout_lines
 from cessna_sim.app.propeller import Propeller
 from cessna_sim.app.sprite import prepare_aircraft
@@ -54,6 +55,8 @@ class FlightSession:
         self.path_h = [altitude_m]
         self.finished_log: RunLog | None = None
         self.propeller = Propeller()
+        self.audio = FlightAudio(config)
+        self.audio.play_engine()
         self.camera = Camera(config.window_width_px, config.window_height_px)
         self.clouds = CloudField()
         self.streaks = StreakField()
@@ -94,6 +97,7 @@ class FlightSession:
             if self.phase_time >= self.config.phase_normal_s:
                 self.phase = "failure"
                 self.phase_time = 0.0
+                self.audio.play_beep()
         elif self.phase == "failure":
             self.phase_time += dt_s
             if self.phase_time >= self.config.phase_failure_banner_s:
@@ -103,6 +107,8 @@ class FlightSession:
         self.camera.update(self.altitude(), dt_s)
         time_s, alpha, airspeed, gamma = self.state()
         del time_s, alpha
+        if self.phase == "glide":
+            self.audio.set_wind_volume(airspeed)
         view_width_m = self.config.window_width_px / self.camera.pixels_per_meter
         self.streaks.update(self.distance(), self.altitude(), airspeed, gamma, dt_s, view_width_m)
 
@@ -112,6 +118,7 @@ class FlightSession:
         self.run = GlideRun(self.h0, self.alpha, self.config)
         self.path_r = [0.0]
         self.path_h = [self.h0]
+        self.audio.play_wind(self.run.airspeed)
 
     def _integrate(self, frame_dt: float) -> None:
         assert self.run is not None
@@ -128,6 +135,7 @@ class FlightSession:
         if self.run.finished:
             self.finished_log = self.run.log()
             self.phase = "done"
+            self.audio.stop()
 
     def _read_input(self, events: list[pygame.event.Event], keys, dt_s: float) -> None:
         for event in events:
